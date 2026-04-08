@@ -49,6 +49,9 @@ async def main() -> None:
     inst_ids = list(set(r.inst_id for r in rules))
     if inst_ids:
         logger.info(f"恢复订阅品种: {inst_ids}")
+        await okx_client.subscribe(inst_ids)
+
+    asyncio.create_task(okx_client.connect())
 
     initialized = False
 
@@ -67,11 +70,6 @@ async def main() -> None:
             initialized = True
             logger.info("微信服务已上线")
             await wechat_client.notify("🤖 OKX价格监控服务已启动\n发送 /pm help 查看可用命令")
-
-            if inst_ids:
-                await okx_client.subscribe(inst_ids)
-
-            asyncio.create_task(okx_client.connect())
         elif status == "offline":
             logger.warning("微信服务离线")
             initialized = False

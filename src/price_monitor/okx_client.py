@@ -47,8 +47,13 @@ class OKXClient:
         self.reconnect_delay = reconnect_delay
         self._ws: websockets.WebSocketClientProtocol | None = None
         self._running = False
+        self._connected = False
         self._subscribed: set[str] = set()
         self._prices: dict[str, TickerData] = {}
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected
 
     async def connect(self) -> None:
         self._running = True
@@ -65,6 +70,7 @@ class OKXClient:
         logger.info(f"连接OKX WebSocket: {self.ws_url}")
         async with websockets.connect(self.ws_url) as ws:
             self._ws = ws
+            self._connected = True
             logger.info("OKX WebSocket连接成功")
 
             if self._subscribed:
@@ -75,6 +81,7 @@ class OKXClient:
                 async for message in ws:
                     await self._handle_message(message)
             finally:
+                self._connected = False
                 ping_task.cancel()
                 try:
                     await ping_task

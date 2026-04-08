@@ -194,6 +194,8 @@ class CommandHandler:
 
         if not ticker:
             await self.okx_client.subscribe([inst_id])
+            if not self.okx_client.is_connected:
+                return f"⚠️ OKX WebSocket未连接，{inst_id} 已加入订阅队列，连接后自动获取数据"
             return f"⏳ 正在订阅 {inst_id}，请稍后再查询"
 
         return (
