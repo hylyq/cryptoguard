@@ -165,7 +165,9 @@ class Agent:
             {"role": "user", "content": query}
         ]
 
-        for _ in range(MAX_TOOL_ITERATIONS):
+        iteration = 0
+        while iteration < MAX_TOOL_ITERATIONS:
+            iteration += 1
             try:
                 response = await client.messages.create(
                     model=self.model,
@@ -181,13 +183,14 @@ class Agent:
                     f"请稍后重试，或使用 /pm 命令手动操作。"
                 )
 
-            # Build the assistant message from response content blocks.
+            # Collect all content blocks first.
+            text_blocks: list[str] = []
             assistant_blocks: list[dict[str, Any]] = []
             tool_results: list[dict[str, Any]] = []
 
             for block in response.content:
                 if block.type == "text":
-                    return block.text
+                    text_blocks.append(block.text)
 
                 elif block.type == "tool_use":
                     tool_name: str = block.name
@@ -226,12 +229,44 @@ class Agent:
                         "content": result_str,
                     })
 
-            if not tool_results:
-                # No text and no tool calls — shouldn't happen, but guard.
-                return "❌ 抱歉，我没有理解您的请求，请换一种方式描述。"
+            # ── Decision: text vs tool_use ──────────────────────────
+            if assistant_blocks:
+                # Model called tools → execute and continue the loop.
+                messages.append({"role": "assistant", "content": assistant_blocks})
+                messages.append({"role": "user", "content": tool_results})
+                continue
 
-            messages.append({"role": "assistant", "content": assistant_blocks})
-            messages.append({"role": "user", "content": tool_results})
+            if text_blocks:
+                combined_text = "\n".join(text_blocks)
+
+                # First iteration with no tool calls: model is "planning"
+                # instead of doing.  Push it to actually use tools.
+                if iteration == 1 and messages[0]["role"] == "user":
+                    # Check for planning-language markers.
+                    planning_markers = (
+                        "我来查", "我来帮", "让我查", "让我帮",
+                        "好的，", "马上执行", "正在为您",
+                        "先获取", "先查询", "我先",
+                    )
+                    if any(m in combined_text for m in planning_markers):
+                        logger.info("检测到规划语言，推动模型调用工具")
+                        messages.append({
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": combined_text}],
+                        })
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "请直接调用工具执行操作，不要再描述计划。"
+                                "调用工具后我会把结果告诉你。"
+                            ),
+                        })
+                        continue
+
+                return combined_text
+
+            # No text and no tool calls — unexpected.
+            return "❌ 抱歉，我没有理解您的请求，请换一种方式描述。"
 
         return (
             "❌ 处理步骤过多，请简化您的请求后重试。\n"
@@ -265,7 +300,9 @@ class Agent:
         ]
         all_raw: list[dict[str, Any]] = []
 
-        for _ in range(MAX_TOOL_ITERATIONS):
+        iteration = 0
+        while iteration < MAX_TOOL_ITERATIONS:
+            iteration += 1
             response = await client.messages.create(
                 model=self.model,
                 max_tokens=1024,
@@ -277,11 +314,11 @@ class Agent:
             assistant_blocks: list[dict[str, Any]] = []
             tool_results: list[dict[str, Any]] = []
             raw_tool_calls: list[dict[str, Any]] = []
+            text_parts: list[str] = []
 
             for block in response.content:
                 if block.type == "text":
-                    all_raw.extend(messages)
-                    return block.text, all_raw
+                    text_parts.append(block.text)
 
                 elif block.type == "tool_use":
                     raw_tool_calls.append({
@@ -320,10 +357,34 @@ class Agent:
                 "tool_calls": raw_tool_calls,
             })
 
-            if not tool_results:
-                return "❌ 无法解析 LLM 响应。", all_raw
+            if assistant_blocks:
+                messages.append({"role": "assistant", "content": assistant_blocks})
+                messages.append({"role": "user", "content": tool_results})
+                continue
 
-            messages.append({"role": "assistant", "content": assistant_blocks})
-            messages.append({"role": "user", "content": tool_results})
+            if text_parts:
+                combined_text = "\n".join(text_parts)
+                if iteration == 1:
+                    planning_markers = (
+                        "我来查", "我来帮", "让我查", "让我帮",
+                        "好的，", "马上执行", "正在为您",
+                        "先获取", "先查询", "我先",
+                    )
+                    if any(m in combined_text for m in planning_markers):
+                        messages.append({
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": combined_text}],
+                        })
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "请直接调用工具执行操作，不要再描述计划。"
+                                "调用工具后我会把结果告诉你。"
+                            ),
+                        })
+                        continue
+                return combined_text, all_raw
+
+            return "❌ 无法解析 LLM 响应。", all_raw
 
         return "❌ 处理步骤过多。", all_raw
