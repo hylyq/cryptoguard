@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -162,6 +163,11 @@ class Agent:
             base_url=self.base_url,
         )
 
+        t_start = time.monotonic()
+        total_tokens_in = 0
+        total_tokens_out = 0
+        total_tool_calls = 0
+
         messages: list[dict[str, Any]] = [
             {"role": "user", "content": query}
         ]
@@ -169,6 +175,7 @@ class Agent:
         iteration = 0
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
+            t_call = time.monotonic()
             try:
                 response = await client.messages.create(
                     model=self.model,
@@ -184,6 +191,18 @@ class Agent:
                     f"请稍后重试，或使用 /pm 命令手动操作。"
                 )
 
+            # ── Observability: log API call latency + token usage ──
+            latency_ms = (time.monotonic() - t_call) * 1000
+            usage = getattr(response, "usage", None)
+            tokens_in = usage.input_tokens if usage else 0
+            tokens_out = usage.output_tokens if usage else 0
+            total_tokens_in += tokens_in
+            total_tokens_out += tokens_out
+            logger.info(
+                "LLM #%d: latency=%dms tokens_in=%d tokens_out=%d",
+                iteration, int(latency_ms), tokens_in, tokens_out,
+            )
+
             # Collect all content blocks first.
             text_blocks: list[str] = []
             assistant_blocks: list[dict[str, Any]] = []
@@ -198,10 +217,6 @@ class Agent:
                     tool_input: dict[str, Any] = block.input or {}
                     tool_use_id: str = block.id
 
-                    logger.info(
-                        "LLM 请求工具调用: %s(%s)", tool_name, tool_input
-                    )
-
                     assistant_blocks.append({
                         "type": "tool_use",
                         "id": tool_use_id,
@@ -212,7 +227,9 @@ class Agent:
                     executor = TOOL_EXECUTOR_MAP.get(tool_name)
                     if executor is None:
                         result_str = f"未知工具: {tool_name}"
+                        t_tool = 0
                     else:
+                        t_tool = time.monotonic()
                         try:
                             result_str = await executor(
                                 okx_client=self.okx_client,
@@ -223,6 +240,15 @@ class Agent:
                         except Exception as exc:
                             logger.exception("工具 %s 执行失败", tool_name)
                             result_str = f"工具 {tool_name} 执行出错: {exc}"
+                        t_tool = (time.monotonic() - t_tool) * 1000
+
+                    total_tool_calls += 1
+                    logger.info(
+                        "工具 #%d: %s(%s) → %dms",
+                        total_tool_calls, tool_name,
+                        {k: v for k, v in tool_input.items()},
+                        int(t_tool),
+                    )
 
                     tool_results.append({
                         "type": "tool_result",
@@ -264,6 +290,13 @@ class Agent:
                         })
                         continue
 
+                total_ms = (time.monotonic() - t_start) * 1000
+                logger.info(
+                    "交互完成: total=%dms llm_calls=%d tool_calls=%d "
+                    "tokens_in=%d tokens_out=%d",
+                    int(total_ms), iteration, total_tool_calls,
+                    total_tokens_in, total_tokens_out,
+                )
                 return combined_text
 
             # No text and no tool calls — unexpected.
