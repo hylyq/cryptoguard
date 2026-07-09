@@ -257,7 +257,7 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 | 6 | 删除告警 | "删除abc12345这个规则" | remove_alert_rule | ✅ | rule_id=abc12345 ✓ |
 | 7 | 查询规则 | "我有哪些监控规则" | list_alert_rules | ✅ | ✓ |
 | 8 | 行情分析 | "ETH最近30分钟波动大吗" | calculate_volatility | ✅ | ETH-USDT, 30min ✓ |
-| 9 | 多步Agent | "帮我盯着ETH，波动超过3%..." | add_change_alert ×2 | ✅ | 双向告警（change_up + change_down）✓ |
+| 9 | 多步Agent | "帮我盯着ETH，30分钟内波动超过3%..." | add_change_alert ×2 | ✅ | 双向告警（change_up + change_down）✓ |
 | 10 | 币种映射 | "比特币什么价格" | get_current_price | ✅ | 中文名→BTC-USDT ✓ |
 
 **准确率: 10/10 (100%)**

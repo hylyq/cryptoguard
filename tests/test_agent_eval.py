@@ -469,7 +469,7 @@ EVAL_CASES = [
     {
         "id": 9,
         "category": "多步Agent",
-        "input": "帮我盯着ETH，波动超过3%就告诉我",
+        "input": "帮我盯着ETH，30分钟内波动超过3%就告诉我",
         "expected_tools": ["add_change_alert", "add_change_alert"],
         "expected_multi": True,
         "note": "应同时创建 change_up 和 change_down 两条规则",
