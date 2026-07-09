@@ -214,7 +214,7 @@ uv run python main.py
 |------|------|--------|
 | `LLM_API_KEY` | LLM API 密钥（必需，在 DeepSeek 平台获取） | - |
 | `LLM_BASE_URL` | Anthropic 兼容 API 端点 | `https://api.deepseek.com/anthropic` |
-| `LLM_MODEL` | 模型名称 | `deepseek-v4-flash` |
+| `LLM_MODEL` | 模型名称 | `deepseek-chat` |
 
 不设置 `LLM_API_KEY` 时，`/ask` 命令返回友好提示，`/pm` 命令不受影响（降级方案）。
 
@@ -258,7 +258,7 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 | 决策 | 选择 | 原因 |
 |------|------|------|
 | LLM SDK | `anthropic` | DeepSeek 提供 Anthropic 兼容端点 (`api.deepseek.com/anthropic`)；tool_use 机制比 OpenAI function calling 更直观 |
-| 默认模型 | `deepseek-v4-flash` | 速度快、成本低，tool_use 能力满足行情监控场景 |
+| 默认模型 | `deepseek-chat` | tool_use 能力强；`v4-flash` 在 Anthropic 端点上工具调用不稳定 |
 | 保留 `/pm` 命令 | 是 | 作为 LLM 不可用时的降级方案；精确命令在某些场景下更高效 |
 | calculate_volatility 独立工具 | 是 | LLM 不擅长精确数值计算；统计计算在 Python 层完成，LLM 专注自然语言解读 |
 | 无状态 Agent | 是 | 匹配微信消息驱动模型；每次 `/ask` 独立处理，避免会话状态管理复杂度 |
