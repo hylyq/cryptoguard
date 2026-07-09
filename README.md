@@ -260,9 +260,7 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 | 9 | 多步Agent | "帮我盯着ETH，30分钟内波动超过3%..." | add_change_alert ×2 | ✅ | 双向告警（change_up + change_down）✓ |
 | 10 | 币种映射 | "比特币什么价格" | get_current_price | ✅ | 中文名→BTC-USDT ✓ |
 
-**准确率: 10/10 (100%)**
-
-测试环境：DeepSeek API (`deepseek-v4-flash`, Anthropic 兼容端点), 2026-07
+**准确率: 10/10 (100%)** | Mock 测试: 23/23 (100%) | 总耗时: ~29s
 
 **已知设计取舍：**
 - Agent 内置"规划语言检测"：当模型返回"好的我来查..."而不调工具时，自动追加提示推动 tool_use（针对 DeepSeek 的已知行为）
