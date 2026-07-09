@@ -583,22 +583,29 @@ class TestRealLLMEval:
                     f"Expected tool '{expected_tool}' but no tool was called"
                 )
             else:
-                called = tool_calls[0]
-                actual_name = called.get("name")
-                actual_input = called.get("input", {})
+                # Search ALL tool calls for the expected one — the LLM may
+                # legitimately call helper tools (e.g. get_current_price)
+                # before the target tool.  We only need one match.
+                matched = None
+                for tc in tool_calls:
+                    if tc.get("name") == expected_tool:
+                        matched = tc
+                        break
 
-                if actual_name != expected_tool:
+                if matched is None:
+                    actual_names = [tc["name"] for tc in tool_calls]
                     failures.append(
-                        f"Expected tool '{expected_tool}', got '{actual_name}'"
+                        f"Expected tool '{expected_tool}' not found in {actual_names}"
                     )
-
-                for key, expected_val in expected_params.items():
-                    actual_val = actual_input.get(key)
-                    if actual_val != expected_val:
-                        failures.append(
-                            f"Param '{key}': expected {expected_val!r}, "
-                            f"got {actual_val!r}"
-                        )
+                else:
+                    actual_input = matched.get("input", {})
+                    for key, expected_val in expected_params.items():
+                        actual_val = actual_input.get(key)
+                        if actual_val != expected_val:
+                            failures.append(
+                                f"Param '{key}': expected {expected_val!r}, "
+                                f"got {actual_val!r}"
+                            )
 
         passed = len(failures) == 0
         return passed, tool_calls, response[:300], "; ".join(failures) if failures else "OK"

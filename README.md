@@ -245,13 +245,28 @@ uv run pytest tests/test_agent_eval.py -v
 LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 ```
 
-**Eval 结果：**
+**Eval 结果（`deepseek-v4-flash` / `LLM_BASE_URL=https://api.deepseek.com/anthropic`）：**
 
-| 指标 | 结果 |
-|------|------|
-| Mock 测试通过率 | 23/23 (100%) |
-| 真实 LLM 测试 | 待测试（需 DeepSeek API Key） |
-| 已知局限 | 需通过真实 LLM 测试验证中文理解和工具选择准确性 |
+| # | 分类 | 输入 | 期望工具 | 结果 | 备注 |
+|---|------|------|---------|------|------|
+| 1 | 价格查询 | "BTC现在多少钱" | get_current_price | ✅ | inst_id=BTC-USDT ✓ |
+| 2 | 价格查询 | "查一下ETH-USDT-SWAP的价格" | get_current_price | ✅ | inst_id=ETH-USDT-SWAP ✓ |
+| 3 | 添加告警 | "帮我盯着比特币，突破10万美金..." | add_price_alert | ✅ | price_above, 100000 ✓ |
+| 4 | 添加告警 | "ETH跌破3000提醒我" | add_price_alert | ✅ | 先调 get_current_price 查价，再正确添加 price_below 告警 |
+| 5 | 波动告警 | "BTC涨5%就通知我，看60分钟" | add_change_alert | ✅ | change_up, 5%, 60min ✓（LLM 先查了行情再添加） |
+| 6 | 删除告警 | "删除abc12345这个规则" | remove_alert_rule | ✅ | rule_id=abc12345 ✓ |
+| 7 | 查询规则 | "我有哪些监控规则" | list_alert_rules | ✅ | ✓ |
+| 8 | 行情分析 | "ETH最近30分钟波动大吗" | calculate_volatility | ✅ | ETH-USDT, 30min ✓ |
+| 9 | 多步Agent | "帮我盯着ETH，波动超过3%..." | add_change_alert ×2 | ✅ | 双向告警（change_up + change_down）✓ |
+| 10 | 币种映射 | "比特币什么价格" | get_current_price | ✅ | 中文名→BTC-USDT ✓ |
+
+**准确率: 10/10 (100%)**
+
+测试环境：DeepSeek API (`deepseek-v4-flash`, Anthropic 兼容端点), 2026-07
+
+**已知设计取舍：**
+- Agent 内置"规划语言检测"：当模型返回"好的我来查..."而不调工具时，自动追加提示推动 tool_use（针对 DeepSeek 的已知行为）
+- LLM 可能在执行主要操作前先调用辅助工具（如添加告警前先查价），eval 框架对此做了匹配而非严格的第一调用检查
 
 ### 设计决策记录
 
