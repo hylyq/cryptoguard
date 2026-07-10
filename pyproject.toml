@@ -1,7 +1,7 @@
 [project]
-name = "price-monitor"
+name = "cryptoguard"
 version = "0.1.0"
-description = "OKX数字货币价格监控程序，支持微信通知"
+description = "CryptoGuard — AI 驱动的数字货币行情监控系统，支持微信交互"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

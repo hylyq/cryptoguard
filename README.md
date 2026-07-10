@@ -1,6 +1,6 @@
-# OKX 价格监控程序
+# CryptoGuard — AI 驱动的数字货币行情监控
 
-基于 OKX WebSocket 的数字货币价格监控程序，支持微信交互配置监控规则。
+基于 OKX WebSocket + LLM Agent 的数字货币智能监控系统，支持微信自然语言交互与精确命令双模式。
 
 ## 功能特性
 
