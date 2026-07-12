@@ -266,7 +266,7 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 **Accuracy: 10/10 (100%)** | Mock tests: 23/23 (100%) | Total time: ~29s
 
 **Known design trade-offs:**
-- The Agent enforces tool usage on the first iteration: if the LLM returns text without calling any tools, it pushes back with a reminder to use tools — preventing the model from fabricating prices from training data (mitigating a known DeepSeek behavior where flash models may skip tool calls and hallucinate stale prices)
+- The Agent enforces tool usage with a multi-iteration pushback: if the LLM returns text without calling any tools, it pushes back up to 2 times with a reminder to use tools — preventing the model from fabricating prices or rules from training data (mitigating a known DeepSeek behavior where flash models may skip tool calls across multiple iterations and hallucinate stale prices or phantom alert rules)
 - The LLM may call auxiliary tools before the main action (e.g., checking price before adding an alert); the eval framework matches on eventual behavior rather than strictly checking the first tool call
 - Price data flows through WebSocket → in-memory cache → query; when the WebSocket disconnects, the cache is purged and a 30-second staleness threshold warns users of outdated data — this trades a brief "no data" window for never silently serving frozen prices
 

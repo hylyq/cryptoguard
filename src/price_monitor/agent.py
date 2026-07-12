@@ -177,7 +177,9 @@ class Agent:
             {"role": "user", "content": query}
         ]
 
+        MAX_PUSHES = 2
         iteration = 0
+        no_tool_text_count = 0
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
             t_call = time.monotonic()
@@ -271,14 +273,16 @@ class Agent:
             if text_blocks:
                 combined_text = "\n".join(text_blocks)
 
-                # First iteration with no tool calls: model is either
-                # "planning" (saying what it will do) or "fabricating"
-                # (generating prices from training data).  Both are
-                # unacceptable — push it to actually use tools.
-                if iteration == 1 and messages[0]["role"] == "user":
+                # If the model has NOT called any tools yet, its text is
+                # either "planning" (saying what it will do) or "fabricating"
+                # (generating prices / rules from training data).  Both are
+                # unacceptable — push it to actually use tools, up to
+                # MAX_PUSHES times before giving up and accepting the text.
+                if total_tool_calls == 0 and no_tool_text_count < MAX_PUSHES:
+                    no_tool_text_count += 1
                     logger.info(
-                        "第 1 轮未调用工具（文本=%d chars），推动模型使用工具",
-                        len(combined_text),
+                        "第 %d 轮未调用工具（文本=%d chars，第 %d 次推动），推动模型使用工具",
+                        iteration, len(combined_text), no_tool_text_count,
                     )
                     messages.append({
                         "role": "assistant",
@@ -338,7 +342,9 @@ class Agent:
         ]
         all_raw: list[dict[str, Any]] = []
 
+        MAX_PUSHES = 2
         iteration = 0
+        no_tool_text_count = 0
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
             response = await client.messages.create(
@@ -402,9 +408,18 @@ class Agent:
 
             if text_parts:
                 combined_text = "\n".join(text_parts)
-                if iteration == 1:
+                # If no tool_use blocks have appeared yet in the entire
+                # transcript, the model hasn't called any tools.  Push back
+                # up to MAX_PUSHES times before giving up.
+                tools_called = any(
+                    msg.get("role") == "assistant" and msg.get("tool_calls")
+                    for msg in all_raw
+                )
+                if not tools_called and no_tool_text_count < MAX_PUSHES:
+                    no_tool_text_count += 1
                     logger.info(
-                        "answer_with_debug 第 1 轮未调用工具，推动模型使用工具"
+                        "answer_with_debug 第 %d 轮未调用工具（第 %d 次推动），推动模型使用工具",
+                        iteration, no_tool_text_count,
                     )
                     messages.append({
                         "role": "assistant",
