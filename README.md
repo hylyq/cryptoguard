@@ -274,6 +274,7 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 - The LLM may call auxiliary tools before the main action (e.g., checking price before adding an alert); the eval framework matches on eventual behavior rather than strictly checking the first tool call
 - Price data flows through WebSocket → in-memory cache → query; when the WebSocket disconnects, the cache is purged and a 30-second staleness threshold warns users of outdated data — this trades a brief "no data" window for never silently serving frozen prices
 - Real LLM eval tests (`--real-llm`) use Redis DB 1 with automatic setup/teardown cleanup to avoid polluting production data with test alert rules
+- `pytest-asyncio >= 1.0` defaults to strict mode which does not support async fixtures; the project explicitly sets `asyncio_mode = "auto"` in `pyproject.toml` to maintain compatibility with async test fixtures
 
 ### Observability
 

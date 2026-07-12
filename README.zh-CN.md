@@ -274,6 +274,7 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 - LLM 可能在执行主要操作前先调用辅助工具（如添加告警前先查价），eval 框架对此做了匹配而非严格的第一调用检查
 - 价格数据流经 WebSocket → 内存缓存 → 查询；WebSocket 断连时缓存被清空，30 秒过期阈值会警告用户数据可能过时——这是一种权衡：宁可短暂"无数据"，也不静默返回冻结价格
 - 真实 LLM 评测（`--real-llm`）使用独立 Redis DB 1，每次测试前后自动清理，避免测试告警规则污染生产数据
+- `pytest-asyncio >= 1.0` 默认使用 strict 模式，不支持 async fixture；项目在 `pyproject.toml` 中显式配置 `asyncio_mode = "auto"` 以保持对异步测试 fixture 的兼容
 
 ### Observability（可观测性）
 
