@@ -266,7 +266,9 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 **Accuracy: 10/10 (100%)** | Mock tests: 23/23 (100%) | Total time: ~29s
 
 **Known design trade-offs:**
-- The Agent enforces tool usage with a multi-iteration pushback: if the LLM returns text without calling any tools, it pushes back up to 2 times with a reminder to use tools — preventing the model from fabricating prices or rules from training data (mitigating a known DeepSeek behavior where flash models may skip tool calls across multiple iterations and hallucinate stale prices or phantom alert rules)
+- The Agent enforces tool usage with a multi-iteration pushback: if the LLM returns text without calling any tools, it pushes back up to 2 times with a reminder to use tools. After 2 pushes, the text is **refused entirely** — an error message suggests using deterministic `/pm` commands instead. This prevents the model from silently fabricating prices, rules, or other data from training data (mitigating a known DeepSeek behavior where flash models may skip tool calls and hallucinate stale prices or phantom alert rules)
+- The system prompt explicitly forbids calling `add_price_alert` / `add_change_alert` unless the user explicitly requests monitoring or alerting (e.g., "盯着", "监控", "通知"). Query-only intents like market overviews are restricted to read-only tools — preventing the LLM from "helpfully" adding default monitoring rules as a side effect
+- Every Agent response appends a tool-call summary footer (`已调用工具: get_current_price ×2, list_alert_rules ×1`) so users can see exactly which tools were invoked and detect unexpected actions
 - The LLM may call auxiliary tools before the main action (e.g., checking price before adding an alert); the eval framework matches on eventual behavior rather than strictly checking the first tool call
 - Price data flows through WebSocket → in-memory cache → query; when the WebSocket disconnects, the cache is purged and a 30-second staleness threshold warns users of outdated data — this trades a brief "no data" window for never silently serving frozen prices
 

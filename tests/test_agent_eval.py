@@ -364,9 +364,9 @@ class TestAgentLoop:
         )
 
     @pytest.mark.asyncio
-    async def test_agent_returns_text_directly(self, agent):
-        """When LLM returns text without tool calls, pass it through."""
-        # Mock the anthropic client's messages.create to return text directly
+    async def test_agent_rejects_text_without_tool_calls(self, agent):
+        """When LLM returns text without tool calls, agent should refuse it
+        after exhausting MAX_PUSHES (2 pushes) to prevent fabrication."""
         text_block = MagicMock()
         text_block.type = "text"
         text_block.text = "BTC 当前价格为 $95,000，今日上涨 2.3%。"
@@ -383,7 +383,10 @@ class TestAgentLoop:
             return_value=mock_client,
         ):
             result = await agent.answer("BTC现在多少钱")
-            assert "95,000" in result
+            # After 3 attempts (initial + 2 pushes) without any tool call,
+            # agent should refuse to return potentially fabricated text.
+            assert "❌" in result
+            assert "未能通过工具获取真实数据" in result
 
     def test_agent_disabled_without_api_key(self):
         """Agent should warn when no API key is configured."""
