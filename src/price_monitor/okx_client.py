@@ -82,6 +82,15 @@ class OKXClient:
                     await self._handle_message(message)
             finally:
                 self._connected = False
+                # ── Clear stale prices so callers don't serve frozen data
+                #    during reconnection windows.
+                if self._prices:
+                    stale_ids = list(self._prices.keys())
+                    self._prices.clear()
+                    logger.warning(
+                        "WebSocket 断开，已清除 %d 个品种的过期价格缓存: %s",
+                        len(stale_ids), stale_ids,
+                    )
                 ping_task.cancel()
                 try:
                     await ping_task
@@ -119,7 +128,14 @@ class OKXClient:
             channel = data["arg"].get("channel", "")
             if channel == "tickers":
                 for item in data["data"]:
-                    ticker = TickerData.from_okx(item)
+                    try:
+                        ticker = TickerData.from_okx(item)
+                    except (KeyError, ValueError, TypeError) as exc:
+                        logger.warning(
+                            "解析 ticker 数据失败: %s — item=%s",
+                            exc, json.dumps(item),
+                        )
+                        continue
                     self._prices[ticker.inst_id] = ticker
                     if self.on_ticker:
                         self.on_ticker(ticker)

@@ -104,7 +104,11 @@ class TestToolExecutors:
 
     @pytest.mark.asyncio
     async def test_get_current_price_returns_price(self, okx_mock, storage_mock):
-        okx_mock.get_price.return_value = 95000.0
+        from datetime import datetime
+        ticker_mock = MagicMock()
+        ticker_mock.last = 95000.0
+        ticker_mock.ts = datetime(2026, 7, 12, 12, 0, 0)
+        okx_mock.get_ticker.return_value = ticker_mock
         result = await TOOL_EXECUTOR_MAP["get_current_price"](
             okx_client=okx_mock,
             storage=storage_mock,
@@ -115,7 +119,7 @@ class TestToolExecutors:
 
     @pytest.mark.asyncio
     async def test_get_current_price_no_data(self, okx_mock, storage_mock):
-        okx_mock.get_price.return_value = None
+        okx_mock.get_ticker.return_value = None
         result = await TOOL_EXECUTOR_MAP["get_current_price"](
             okx_client=okx_mock,
             storage=storage_mock,
@@ -127,11 +131,13 @@ class TestToolExecutors:
 
     @pytest.mark.asyncio
     async def test_get_ticker_detail(self, okx_mock, storage_mock):
+        from datetime import datetime
         ticker_mock = MagicMock()
         ticker_mock.last = 3000.0
         ticker_mock.high_24h = 3100.0
         ticker_mock.low_24h = 2900.0
         ticker_mock.vol_24h = 123456.0
+        ticker_mock.ts = datetime(2026, 7, 12, 12, 0, 0)
         okx_mock.get_ticker.return_value = ticker_mock
 
         result = await TOOL_EXECUTOR_MAP["get_ticker_detail"](

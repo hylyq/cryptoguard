@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import statistics
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -230,21 +231,35 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 # Tool executor functions
 # ──────────────────────────────────────────────────────────────────────
 
+STALE_THRESHOLD = timedelta(seconds=30)
+
+
+def _staleness_suffix(ticker: Any) -> str:
+    """Return a warning string if the ticker data is older than the threshold."""
+    from price_monitor.okx_client import TickerData as TD
+    age = datetime.now(timezone.utc) - ticker.ts.replace(tzinfo=timezone.utc)
+    if age > STALE_THRESHOLD:
+        return f"\n⚠️ 数据已过期 {int(age.total_seconds())} 秒，可能不是实时价格"
+    return ""
+
 
 async def execute_get_current_price(
     okx_client: OKXClient,
     **kwargs: Any,
 ) -> str:
     inst_id: str = kwargs["inst_id"]
-    price = okx_client.get_price(inst_id)
-    if price is None:
+    ticker = okx_client.get_ticker(inst_id)
+    if ticker is None:
         await okx_client.subscribe([inst_id])
         return (
             f"{inst_id} 暂时没有价格数据，已自动订阅该品种。"
             f"请稍后再次查询。"
         )
     from price_monitor.storage import format_price
-    return f"{inst_id} 当前价格: ${format_price(price)}"
+    return (
+        f"{inst_id} 当前价格: ${format_price(ticker.last)}"
+        f"{_staleness_suffix(ticker)}"
+    )
 
 
 async def execute_get_ticker_detail(
@@ -266,6 +281,7 @@ async def execute_get_ticker_detail(
         f"  24h 最高: ${format_price(ticker.high_24h)}\n"
         f"  24h 最低: ${format_price(ticker.low_24h)}\n"
         f"  24h 成交量: {ticker.vol_24h:,.0f}"
+        f"{_staleness_suffix(ticker)}"
     )
 
 

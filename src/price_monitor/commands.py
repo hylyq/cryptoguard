@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from .storage import AlertRule, AlertType, format_price
@@ -264,12 +265,21 @@ class CommandHandler:
                 return f"⚠️ OKX WebSocket未连接，{inst_id} 已加入订阅队列，连接后自动获取数据"
             return f"⏳ 正在订阅 {inst_id}，请稍后再查询"
 
+        # ── Staleness check: warn if the ticker is older than 30 seconds ──
+        staleness = ""
+        age = datetime.now(timezone.utc) - ticker.ts.replace(tzinfo=timezone.utc)
+        if age > timedelta(seconds=30):
+            staleness = (
+                f"\n⚠️ 数据已过期 {int(age.total_seconds())} 秒，可能不是实时价格"
+            )
+
         return (
             f"📊 {inst_id}\n"
             f"当前价格: ${format_price(ticker.last)}\n"
             f"24h最高: ${format_price(ticker.high_24h)}\n"
             f"24h最低: ${format_price(ticker.low_24h)}\n"
             f"24h成交量: {ticker.vol_24h:,.0f}"
+            f"{staleness}"
         )
 
     async def _cmd_clear(self, args: list) -> str:

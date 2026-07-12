@@ -268,6 +268,7 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 **Known design trade-offs:**
 - The Agent enforces tool usage on the first iteration: if the LLM returns text without calling any tools, it pushes back with a reminder to use tools — preventing the model from fabricating prices from training data (mitigating a known DeepSeek behavior where flash models may skip tool calls and hallucinate stale prices)
 - The LLM may call auxiliary tools before the main action (e.g., checking price before adding an alert); the eval framework matches on eventual behavior rather than strictly checking the first tool call
+- Price data flows through WebSocket → in-memory cache → query; when the WebSocket disconnects, the cache is purged and a 30-second staleness threshold warns users of outdated data — this trades a brief "no data" window for never silently serving frozen prices
 
 ### Observability
 
@@ -378,6 +379,16 @@ The program is optimized for high-frequency WebSocket data streams to keep CPU a
 - **Deferred History Cleanup**: Price history purged every 60 seconds rather than rebuilding the list on every tick
 
 With these optimizations, CPU usage stays **<1%** even when monitoring multiple symbols.
+
+## Data Freshness & Reliability
+
+To prevent serving stale prices during WebSocket disconnections, CryptoGuard implements multiple layers of protection:
+
+- **Cache Invalidation on Disconnect**: When the OKX WebSocket connection drops, the in-memory price cache is immediately cleared. Subsequent queries trigger a re-subscription rather than silently returning the last known (frozen) price.
+- **Staleness Detection**: Every price query checks the ticker's timestamp against the current time. If data is older than 30 seconds, a `⚠️ Data is X seconds stale` warning is appended to the response — the user knows the data may not be real-time.
+- **Resilient Message Parsing**: Malformed ticker messages from OKX are caught and logged individually instead of crashing the entire WebSocket read loop. The connection stays alive and healthy messages continue to be processed.
+
+These measures ensure that `/pm price` and `/ask` always surface the freshest available data — or transparently warn when data may be outdated.
 
 ## Dependencies
 

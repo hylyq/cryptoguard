@@ -1,0 +1,1 @@
+- [Stale price data on WebSocket disconnect](stale-price-data-on-websocket-disconnect.md) — `/pm price` returns frozen prices after OKX WebSocket drops; root cause and fixes applied
