@@ -266,7 +266,7 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 **Accuracy: 10/10 (100%)** | Mock tests: 23/23 (100%) | Total time: ~29s
 
 **Known design trade-offs:**
-- The Agent includes "planning-language detection": when the model returns "Okay, let me check..." without calling a tool, it automatically appends a prompt to drive tool_use (mitigating a known DeepSeek behavior)
+- The Agent enforces tool usage on the first iteration: if the LLM returns text without calling any tools, it pushes back with a reminder to use tools — preventing the model from fabricating prices from training data (mitigating a known DeepSeek behavior where flash models may skip tool calls and hallucinate stale prices)
 - The LLM may call auxiliary tools before the main action (e.g., checking price before adding an alert); the eval framework matches on eventual behavior rather than strictly checking the first tool call
 
 ### Observability
@@ -293,7 +293,7 @@ INFO  Interaction complete: total=1820ms llm_calls=2 tool_calls=1 tokens_in=3300
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | LLM SDK | `anthropic` | DeepSeek provides an Anthropic-compatible endpoint (`api.deepseek.com/anthropic`); the tool_use mechanism is more intuitive than OpenAI function calling |
-| Default model | `deepseek-v4-flash` | DeepSeek's latest flagship model (`deepseek-chat` will be deprecated 2026/07/24); stable tool_use behavior when paired with planning-language detection |
+| Default model | `deepseek-v4-flash` | DeepSeek's latest flagship model (`deepseek-chat` will be deprecated 2026/07/24); stable tool_use behavior when paired with first-iteration tool-call enforcement |
 | Keep `/pm` commands | Yes | Fallback when LLM is unavailable; precise commands are more efficient in certain scenarios |
 | `calculate_volatility` as standalone tool | Yes | LLMs aren't reliable at precise numerical computation; stats done in Python layer, LLM focuses on natural language interpretation |
 | Stateless agent | Yes | Matches WeChat's message-driven model; each `/ask` is independent, avoiding session state management complexity |
