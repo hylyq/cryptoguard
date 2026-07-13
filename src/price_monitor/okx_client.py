@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
@@ -180,6 +181,7 @@ class OKXClient:
     async def unsubscribe(self, inst_ids: list[str]) -> None:
         for inst_id in inst_ids:
             self._subscribed.discard(inst_id)
+            self._prices.pop(inst_id, None)  # 清理过期缓存，防止后续查询返回旧数据
 
         if self._ws:
             args = [{"channel": "tickers", "instId": inst_id} for inst_id in inst_ids]
@@ -196,6 +198,22 @@ class OKXClient:
 
     def get_all_prices(self) -> dict[str, float]:
         return {inst_id: ticker.last for inst_id, ticker in self._prices.items()}
+
+    async def wait_for_ticker(
+        self, inst_id: str, timeout: float = 3.0
+    ) -> TickerData | None:
+        """Wait up to *timeout* seconds for a ticker to arrive after subscription.
+
+        Returns the ``TickerData`` once available, or ``None`` if the deadline
+        passes without receiving a ticker for *inst_id*.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            ticker = self._prices.get(inst_id)
+            if ticker is not None:
+                return ticker
+            await asyncio.sleep(0.5)
+        return None
 
     async def close(self) -> None:
         self._running = False

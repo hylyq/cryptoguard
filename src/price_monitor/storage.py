@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 REDIS_KEY_RULES = "price_monitor:rules"
 REDIS_KEY_PRICES = "price_monitor:prices"
+PRICE_HISTORY_TTL = 7200  # 价格历史 2 小时后自动过期（秒）
 
 
 def format_price(price: float) -> str:
@@ -142,6 +143,7 @@ class RuleStorage:
         data = {"price": price, "ts": ts.isoformat()}
         await self.redis.rpush(key, json.dumps(data))
         await self.redis.ltrim(key, -1000, -1)
+        await self.redis.expire(key, PRICE_HISTORY_TTL)
 
     async def save_prices_batch(self, updates: list[tuple[str, float, datetime]]) -> None:
         if not updates:
@@ -152,6 +154,7 @@ class RuleStorage:
                 data = {"price": price, "ts": ts.isoformat()}
                 pipe.rpush(key, json.dumps(data))
                 pipe.ltrim(key, -1000, -1)
+                pipe.expire(key, PRICE_HISTORY_TTL)
             await pipe.execute()
 
     async def get_price_history(
