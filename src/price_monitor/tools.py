@@ -71,6 +71,20 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "get_all_market_prices",
+        "description": (
+            "获取当前所有已订阅品种的实时价格概览。无需指定具体品种，"
+            "自动返回所有活跃品种的当前价格和更新时间。"
+            "用于回答\"市场行情如何\"\"整体走势怎么样\"\"现在行情好吗\""
+            "等泛指的市场概览问题。这是处理无特定币种的市场查询时的首选工具。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
         "name": "get_price_history",
         "description": (
             "获取指定交易对在过去 N 分钟内的价格历史数据。"
@@ -300,6 +314,42 @@ async def execute_get_ticker_detail(
     )
 
 
+async def execute_get_all_market_prices(
+    okx_client: OKXClient,
+    **kwargs: Any,
+) -> str:
+    """Return a market overview of all currently-subscribed instruments."""
+    prices = okx_client.get_all_prices()
+    if not prices:
+        return (
+            "📭 当前没有任何已订阅品种的价格数据。\n"
+            "您可以通过以下方式添加监控：\n"
+            "  • 告诉我您想监控的币种和条件，如「帮我监控BTC突破10万就通知我」\n"
+            "  • 或使用 /pm add 命令手动添加规则"
+        )
+
+    from price_monitor.storage import format_price
+
+    lines = ["📊 当前市场行情:"]
+    for inst_id, price in sorted(prices.items()):
+        ticker = okx_client.get_ticker(inst_id)
+        if ticker is not None:
+            age = datetime.now(timezone.utc) - ticker.ts.replace(tzinfo=timezone.utc)
+            if age.total_seconds() < 60:
+                age_str = f"{int(age.total_seconds())}秒前"
+            elif age.total_seconds() < 3600:
+                age_str = f"{int(age.total_seconds() / 60)}分钟前"
+            else:
+                age_str = f"{int(age.total_seconds() / 3600)}小时前"
+            stale_mark = " ⚠️过期" if age > STALE_THRESHOLD else ""
+        else:
+            age_str = "未知"
+            stale_mark = ""
+        lines.append(f"  {inst_id}: ${format_price(price)} (更新于{age_str}{stale_mark})")
+
+    return "\n".join(lines)
+
+
 async def execute_get_price_history(
     storage: RuleStorage,
     **kwargs: Any,
@@ -485,6 +535,7 @@ async def execute_remove_alert_rule(
 TOOL_EXECUTOR_MAP: dict[str, Any] = {
     "get_current_price": execute_get_current_price,
     "get_ticker_detail": execute_get_ticker_detail,
+    "get_all_market_prices": execute_get_all_market_prices,
     "get_price_history": execute_get_price_history,
     "calculate_volatility": execute_calculate_volatility,
     "add_price_alert": execute_add_price_alert,
