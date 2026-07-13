@@ -57,9 +57,9 @@ class TestToolSchemas:
             )
 
     def test_tool_count(self):
-        """We expect exactly 8 tools."""
-        assert len(TOOL_SCHEMAS) == 8, f"Expected 8 tools, got {len(TOOL_SCHEMAS)}"
-        assert len(TOOL_EXECUTOR_MAP) == 8
+        """We expect exactly 9 tools."""
+        assert len(TOOL_SCHEMAS) == 9, f"Expected 9 tools, got {len(TOOL_SCHEMAS)}"
+        assert len(TOOL_EXECUTOR_MAP) == 9
 
     def test_known_tool_names(self):
         """Verify the expected tool names are present."""
@@ -67,6 +67,7 @@ class TestToolSchemas:
         expected = {
             "get_current_price",
             "get_ticker_detail",
+            "get_all_market_prices",
             "get_price_history",
             "calculate_volatility",
             "add_price_alert",
@@ -104,10 +105,10 @@ class TestToolExecutors:
 
     @pytest.mark.asyncio
     async def test_get_current_price_returns_price(self, okx_mock, storage_mock):
-        from datetime import datetime
+        from datetime import datetime, timezone
         ticker_mock = MagicMock()
         ticker_mock.last = 95000.0
-        ticker_mock.ts = datetime(2026, 7, 12, 12, 0, 0)
+        ticker_mock.ts = datetime.now(timezone.utc)
         okx_mock.get_ticker.return_value = ticker_mock
         result = await TOOL_EXECUTOR_MAP["get_current_price"](
             okx_client=okx_mock,
@@ -120,24 +121,25 @@ class TestToolExecutors:
     @pytest.mark.asyncio
     async def test_get_current_price_no_data(self, okx_mock, storage_mock):
         okx_mock.get_ticker.return_value = None
+        okx_mock.wait_for_ticker = AsyncMock(return_value=None)
         result = await TOOL_EXECUTOR_MAP["get_current_price"](
             okx_client=okx_mock,
             storage=storage_mock,
             inst_id="BTC-USDT",
         )
-        assert "暂时没有价格数据" in result
+        assert "尚未收到价格数据" in result
 
     # ── get_ticker_detail ──────────────────────────────────────────
 
     @pytest.mark.asyncio
     async def test_get_ticker_detail(self, okx_mock, storage_mock):
-        from datetime import datetime
+        from datetime import datetime, timezone
         ticker_mock = MagicMock()
         ticker_mock.last = 3000.0
         ticker_mock.high_24h = 3100.0
         ticker_mock.low_24h = 2900.0
         ticker_mock.vol_24h = 123456.0
-        ticker_mock.ts = datetime(2026, 7, 12, 12, 0, 0)
+        ticker_mock.ts = datetime.now(timezone.utc)
         okx_mock.get_ticker.return_value = ticker_mock
 
         result = await TOOL_EXECUTOR_MAP["get_ticker_detail"](
