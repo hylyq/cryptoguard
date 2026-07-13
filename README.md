@@ -146,7 +146,7 @@ User WeChat message "/ask Monitor ETH for me"
 │  ┌────────────────────────────────────────┐  │
 │  │  Agent.answer(query)                   │  │
 │  │                                        │  │
-│  │  1. Build system prompt + 8 tools     │  │
+│  │  1. Build system prompt + 9 tools     │  │
 │  │  2. Call DeepSeek API                  │  │
 │  │     (Anthropic-compatible endpoint)    │  │
 │  │  3. LLM returns tool_use blocks        │  │
@@ -161,7 +161,7 @@ User WeChat message "/ask Monitor ETH for me"
 
 **Core design principles:**
 
-- **Tool-Use Pattern**: The LLM never directly manipulates user data. It calls 8 predefined tool functions, each wrapping one or more existing Python functions, ensuring operational safety and consistency.
+- **Tool-Use Pattern**: The LLM never directly manipulates user data. It calls 9 predefined tool functions, each wrapping one or more existing Python functions, ensuring operational safety and consistency.
 - **Pre-computation First**: Numerical calculations (e.g., volatility standard deviation) are done in the Python layer. The LLM focuses solely on natural language interpretation, avoiding LLM math errors.
 - **Atomic Operations**: Adding an alert requires 3 steps (create rule → subscribe WebSocket → invalidate cache), packaged as a single tool call for atomicity.
 - **Stateless Design**: Each `/ask` call is independent with no conversation history, matching WeChat's message-driven model.
@@ -170,8 +170,9 @@ User WeChat message "/ask Monitor ETH for me"
 
 | Tool Name | Function | Wraps |
 |-----------|----------|-------|
-| `get_current_price` | Query real-time price | `okx_client.get_price()` |
+| `get_current_price` | Query real-time price for a specific instrument | `okx_client.get_price()` |
 | `get_ticker_detail` | Query detailed ticker (price + 24h high/low + volume) | `okx_client.get_ticker()` |
+| `get_all_market_prices` | Query all subscribed instruments at once — the go-to tool for general market overview queries like "How's the market?" | `okx_client.get_all_prices()` |
 | `get_price_history` | Fetch price history | `storage.get_price_history()` |
 | `calculate_volatility` | Volatility analysis (high/low/range/change/std dev) | `get_price_history()` + `statistics.stdev()` |
 | `add_price_alert` | Add price break-above/drop-below alert | `storage.add_rule()` + subscribe + cache invalidate |
@@ -197,6 +198,10 @@ User WeChat message "/ask Monitor ETH for me"
 # Configure alerts
 /ask Watch Bitcoin and notify me if it breaks above $100K
 /ask Tell me if ETH falls below 3000
+
+# Market overview (no specific coin needed — returns all monitored instruments)
+/ask How's the market right now?
+/ask What's the current market situation?
 
 # Market analysis
 /ask Has ETH been volatile in the last 30 minutes?
@@ -272,7 +277,7 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 - The system prompt explicitly forbids calling `add_price_alert` / `add_change_alert` unless the user explicitly requests monitoring or alerting (e.g., "盯着", "监控", "通知"). Query-only intents like market overviews are restricted to read-only tools — preventing the LLM from "helpfully" adding default monitoring rules as a side effect
 - Every Agent response appends a tool-call summary footer (`已调用工具: get_current_price ×2, list_alert_rules ×1`) so users can see exactly which tools were invoked and detect unexpected actions
 - The LLM may call auxiliary tools before the main action (e.g., checking price before adding an alert); the eval framework matches on eventual behavior rather than strictly checking the first tool call
-- Price data flows through WebSocket → in-memory cache → query; when the WebSocket disconnects, the cache is purged and a 30-second staleness threshold warns users of outdated data — this trades a brief "no data" window for never silently serving frozen prices
+- Price data flows through WebSocket → in-memory cache → query; when the WebSocket disconnects, the cache is purged. A 30-second staleness threshold **rejects** stale queries outright (not just warns) — this trades a brief "no data" window for never silently serving frozen prices. Additionally, unsubscribing an instrument purges its cached ticker, and Redis price history auto-expires after 2 hours, closing the last remaining loophole where stale data could leak through.
 - Real LLM eval tests (`--real-llm`) use Redis DB 1 with automatic setup/teardown cleanup to avoid polluting production data with test alert rules
 - `pytest-asyncio >= 1.0` defaults to strict mode which does not support async fixtures; the project explicitly sets `asyncio_mode = "auto"` in `pyproject.toml` to maintain compatibility with async test fixtures
 
@@ -390,13 +395,16 @@ With these optimizations, CPU usage stays **<1%** even when monitoring multiple 
 
 To prevent serving stale prices during WebSocket disconnections, CryptoGuard implements multiple layers of protection:
 
+- **Stale Data Rejection**: Price queries enforce a 30-second freshness threshold. If the cached ticker is older than 30 seconds, the query is **rejected outright** with an error message — the user never receives silently-stale data. (Previously this was a warning; now it's a hard refusal.)
 - **Cache Invalidation on Disconnect**: When the OKX WebSocket connection drops, the in-memory price cache is immediately cleared. Subsequent queries trigger a re-subscription rather than silently returning the last known (frozen) price.
+- **Cache Cleanup on Unsubscribe**: When an instrument is unsubscribed (e.g., all alert rules for it are deleted), its cached ticker data is immediately purged from memory. This prevents a scenario where a re-query hours or days later would return the last known price from the previous subscription.
+- **Redis Price History TTL**: Historical price data in Redis automatically expires after 2 hours. This prevents volatility analysis from using price snapshots accumulated during a previous session or a long-disconnected period.
+- **Auto-Subscribe Wait**: When a query triggers an auto-subscription for a new instrument, the system waits up to 3 seconds for the first ticker to arrive. If data arrives within the window, it's returned immediately — eliminating the "no data yet, please try again" round-trip for first-time queries.
 - **Subscription Preservation**: When a new instrument is added via auto-subscribe (e.g., the LLM queries SOL while BTC/ETH are already monitored), the subscribe message re-sends **all** tracked instruments — not just the new one. This prevents OKX's WebSocket server from treating the new subscribe as a replacement and silently dropping previously-subscribed instruments (whose prices would then freeze at the last snapshot).
-- **Staleness Detection**: Every price query checks the ticker's timestamp against the current time. If data is older than 30 seconds, a `⚠️ Data is X seconds stale` warning is appended to the response — the user knows the data may not be real-time.
 - **Resilient Message Parsing**: Malformed ticker messages from OKX are caught and logged individually instead of crashing the entire WebSocket read loop. The connection stays alive and healthy messages continue to be processed.
 - **Dead Connection Detection**: Ping failures are no longer silently swallowed. When a ping fails, the WebSocket is force-closed to trigger a reconnect cycle, preventing the system from serving stale prices through an undetected dead connection.
 
-These measures ensure that `/pm price` and `/ask` always surface the freshest available data — or transparently warn when data may be outdated.
+These measures ensure that `/pm price` and `/ask` always surface the freshest available data — or explicitly refuse to return data that cannot be verified as current.
 
 ## Dependencies
 

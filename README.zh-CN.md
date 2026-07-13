@@ -146,7 +146,7 @@ uv run python main.py
 │  ┌────────────────────────────────────────┐  │
 │  │  Agent.answer(query)                   │  │
 │  │                                        │  │
-│  │  1. 构建 system prompt + 8 个 tools   │  │
+│  │  1. 构建 system prompt + 9 个 tools   │  │
 │  │  2. 调用 DeepSeek API                  │  │
 │  │     (Anthropic 兼容端点)               │  │
 │  │  3. LLM 返回 tool_use blocks           │  │
@@ -161,7 +161,7 @@ uv run python main.py
 
 **核心设计原则：**
 
-- **Tool-Use 模式**：LLM 不直接操作用户数据，而是通过调用预定义的 8 个工具函数来完成任务。每个工具封装了一个或多个已有的 Python 函数调用，确保操作安全和一致性。
+- **Tool-Use 模式**：LLM 不直接操作用户数据，而是通过调用预定义的 9 个工具函数来完成任务。每个工具封装了一个或多个已有的 Python 函数调用，确保操作安全和一致性。
 - **预计算优先**：数值计算（如波动率标准差）在 Python 层完成，LLM 只负责自然语言解读，避免 LLM 的数学计算错误。
 - **原子操作打包**：添加告警需要同时执行 3 步（创建规则→订阅 WebSocket→失效缓存），封装为单个工具调用，保证原子性。
 - **无状态设计**：每次 `/ask` 调用是独立的，不保留对话历史，匹配微信机器人的消息驱动模型。
@@ -170,8 +170,9 @@ uv run python main.py
 
 | 工具名称 | 功能 | 对应已有函数 |
 |---------|------|-------------|
-| `get_current_price` | 查询实时价格 | `okx_client.get_price()` |
+| `get_current_price` | 查询指定品种实时价格 | `okx_client.get_price()` |
 | `get_ticker_detail` | 查询详细行情（价格+24h高低+成交量） | `okx_client.get_ticker()` |
+| `get_all_market_prices` | 一键获取所有已订阅品种的实时价格——回答「行情如何」「市场怎么样」等泛指问题的首选工具 | `okx_client.get_all_prices()` |
 | `get_price_history` | 获取价格历史数据 | `storage.get_price_history()` |
 | `calculate_volatility` | 波动率分析（最高/最低/范围/涨跌幅/标准差） | `get_price_history()` + `statistics.stdev()` |
 | `add_price_alert` | 添加价格突破/跌破告警 | `storage.add_rule()` + subscribe + cache invalidate |
@@ -197,6 +198,10 @@ uv run python main.py
 # 配置告警
 /ask 帮我盯着比特币，突破10万美金就通知我
 /ask 如果ETH跌到3000以下告诉我
+
+# 市场概览（无需指定币种——返回所有已监控品种）
+/ask 现在市场行情如何？
+/ask 目前市场情况怎么样？
 
 # 市场分析
 /ask ETH最近30分钟波动大吗？
@@ -272,7 +277,7 @@ LLM_API_KEY=sk-xxx uv run pytest tests/test_agent_eval.py -v --real-llm
 - System prompt 明确禁止在用户未要求监控/告警时调用 `add_price_alert` / `add_change_alert`。行情查询、价格查询等只读意图仅允许使用查询工具——防止 LLM "自作主张"将 system prompt 中的示例参数（如 BTC 10万、ETH 3000）当作默认规则静默添加
 - 每次 Agent 回复末尾追加工具调用摘要（`已调用工具: get_current_price ×2, list_alert_rules ×1`），用户可以一目了然地看到 LLM 调用了哪些工具，及时发现异常操作
 - LLM 可能在执行主要操作前先调用辅助工具（如添加告警前先查价），eval 框架对此做了匹配而非严格的第一调用检查
-- 价格数据流经 WebSocket → 内存缓存 → 查询；WebSocket 断连时缓存被清空，30 秒过期阈值会警告用户数据可能过时——这是一种权衡：宁可短暂"无数据"，也不静默返回冻结价格
+- 价格数据流经 WebSocket → 内存缓存 → 查询；WebSocket 断连时缓存被清空，30 秒过期阈值会**直接拒绝**过期查询（而非仅警告）——这是一种权衡：宁可短暂"无数据"，也不静默返回冻结价格。此外，退订品种时同步清除其缓存 ticker，Redis 价格历史 2 小时自动过期，堵住了过期数据可能泄漏的最后漏洞。
 - 真实 LLM 评测（`--real-llm`）使用独立 Redis DB 1，每次测试前后自动清理，避免测试告警规则污染生产数据
 - `pytest-asyncio >= 1.0` 默认使用 strict 模式，不支持 async fixture；项目在 `pyproject.toml` 中显式配置 `asyncio_mode = "auto"` 以保持对异步测试 fixture 的兼容
 
@@ -390,13 +395,16 @@ LLM_API_KEY=sk-xxx
 
 为防止 WebSocket 断连时返回过期价格，CryptoGuard 实现了多层防护：
 
+- **过期拒绝**：价格查询强制执行 30 秒新鲜度阈值。若缓存 ticker 超过 30 秒未更新，查询将被**直接拒绝**并返回错误信息——用户永远不会收到被静默的过期数据。（此前仅为警告，现已升级为硬拒绝。）
 - **断连清缓存**：OKX WebSocket 断开时立即清空内存价格缓存。后续查询会触发重新订阅，而非静默返回断连前的冻结价格。
+- **退订清缓存**：当品种被退订时（如该品种的所有告警规则被删除），其缓存 ticker 数据立即从内存中清除。防止几小时或几天后重新查询时返回上次订阅期间的最后已知价格。
+- **Redis 历史 TTL**：Redis 中的历史价格数据在 2 小时后自动过期。防止波动率分析使用之前会话或长时间断连期间积累的价格快照。
+- **自动订阅等待**：当查询触发新品种自动订阅时，系统最多等待 3 秒以获取首个 ticker。若在窗口期内收到数据则立即返回——消除首次查询「暂无数据，请稍后重试」的往返等待。
 - **订阅保全**：当新币种被自动订阅时（如 LLM 查询 SOL 时 BTC/ETH 已在监控中），订阅消息会**重发全部已订阅品种**——而非仅发送新品种。这防止了 OKX WebSocket 服务端将新订阅视为替换操作，导致之前订阅的品种被静默丢弃（其价格将永远停留在最后一次快照）。
-- **过期检测**：每次价格查询都会对比 ticker 时间戳与当前时间。若数据超过 30 秒未更新，回复中会追加 `⚠️ 数据已过期 X 秒` 警告——用户可知数据可能不是实时的。
 - **异常消息容错**：OKX 返回的异常格式 ticker 消息会被单独捕获并记录日志，不会导致整个 WebSocket 读循环崩溃。连接保持正常，健康的 ticker 消息继续被处理。
 - **死连接检测**：Ping 失败不再被静默吞掉。当 ping 发送失败时，WebSocket 会被强制关闭以触发重连循环，防止系统通过未被检测到的死连接提供过期价格。
 
-这些措施确保 `/pm price` 和 `/ask` 始终返回最新可用数据——或在数据可能过期时主动告知用户。
+这些措施确保 `/pm price` 和 `/ask` 始终返回最新可用数据——或在无法验证数据实时性时明确拒绝返回。
 
 ## 依赖
 
