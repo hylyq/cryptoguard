@@ -112,7 +112,7 @@ class Agent:
     """Natural language agent that uses an LLM to operate the price monitor.
 
     Each ``answer()`` call is a self-contained interaction — no conversation
-    history is preserved across calls.  This keeps the WeChat bot stateless
+    history is preserved across calls.  This keeps the bot stateless
     and matches the existing command-handler pattern.
 
     Parameters

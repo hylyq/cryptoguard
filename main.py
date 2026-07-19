@@ -28,12 +28,12 @@ async def main() -> None:
     storage = RuleStorage(redis_url=redis_url)
     okx_client = OKXClient(ws_url=okx_ws_url) if okx_ws_url else OKXClient()
 
-    from larky import WeChatClient
+    from larky import UnifiedClient
 
-    wechat_client = WeChatClient(source="price-monitor", redis_url=redis_url)
+    unified_client = UnifiedClient(source="price-monitor", redis_url=redis_url)
 
     async def alert_callback(rule, ticker, message):
-        await wechat_client.notify(message, priority="high")
+        await unified_client.notify(message, priority="high")
 
     monitor = PriceMonitor(storage=storage, alert_callback=alert_callback)
     okx_client.on_ticker = lambda ticker: asyncio.create_task(monitor.on_ticker(ticker))
@@ -57,7 +57,7 @@ async def main() -> None:
         storage=storage,
         monitor=monitor,
         okx_client=okx_client,
-        wechat_client=wechat_client,
+        wechat_client=unified_client,
         agent=agent,
     )
 
@@ -71,13 +71,13 @@ async def main() -> None:
 
     initialized = False
 
-    @wechat_client.message_handler
+    @unified_client.message_handler
     async def handle_message(data: dict):
         text = data.get("text", "")
         logger.info(f"收到消息: {text}")
-        await cmd_handler.handle_text(text, wechat_client)
+        await cmd_handler.handle_text(text, unified_client)
 
-    @wechat_client.status_handler
+    @unified_client.status_handler
     async def handle_status(data: dict):
         nonlocal initialized
         status = data.get("status")
@@ -85,7 +85,7 @@ async def main() -> None:
         if status == "online" and not initialized:
             initialized = True
             logger.info("微信服务已上线")
-            await wechat_client.notify("🤖 OKX价格监控服务已启动\n发送 /pm help 查看可用命令")
+            await unified_client.notify("🤖 OKX价格监控服务已启动\n发送 /pm help 查看可用命令")
         elif status == "offline":
             logger.warning("微信服务离线")
             initialized = False
@@ -94,7 +94,7 @@ async def main() -> None:
 
     try:
         await monitor.start()
-        await wechat_client.run()
+        await unified_client.run()
     finally:
         await monitor.stop()
         await okx_client.close()

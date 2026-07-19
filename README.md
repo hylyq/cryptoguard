@@ -2,14 +2,14 @@
 
 English | [中文](README.zh-CN.md)
 
-An intelligent cryptocurrency monitoring system built on OKX WebSocket + LLM Agent, supporting natural language interaction via WeChat alongside precise command-based control.
+An intelligent cryptocurrency monitoring system built on OKX WebSocket + LLM Agent, supporting natural language interaction via Feishu/WeChat/QQ alongside precise command-based control.
 
 ## Features
 
 - **Real-time Price Monitoring**: Fetch live prices via OKX WebSocket
 - **Price Alerts**: Notifications when price breaks above/below a specified threshold
 - **Volatility Alerts**: Notifications when price change reaches a threshold within a given time window
-- **WeChat Integration**: Add, remove, and query monitoring rules via WeChat commands
+- **Multi-Platform Messaging**: Add, remove, and query monitoring rules via Feishu/WeChat/QQ (powered by larky unified API)
 - **AI Smart Assistant**: Natural language interaction via `/ask` command (powered by LLM Agent + Tool-Use architecture)
 - **Rule Persistence**: Monitoring rules stored in Redis, automatically restored on restart
 - **Smart Price Display**: Auto-adjusts decimal precision by price magnitude — works for everything from BTC to SHIB/PEPE
@@ -18,7 +18,7 @@ An intelligent cryptocurrency monitoring system built on OKX WebSocket + LLM Age
 
 ```
 ┌─────────────────┐     ┌─────────────────┐
-│   WeChatService  │     │  price_monitor  │
+│  UnifiedService │     │  price_monitor  │
 │ (larky process)  │◄───►│   (this app)    │
 └────────┬─────────┘     └────────┬────────┘
          │                        │
@@ -40,7 +40,7 @@ uv sync
 ### Prerequisites
 
 1. Redis server running
-2. larky WeChat service running (`uv run python -m larky`)
+2. larky unified message service running (`uv run python -m larky`)
 
 ### Start the Monitor
 
@@ -48,9 +48,9 @@ uv sync
 uv run python main.py
 ```
 
-## WeChat Commands
+## Bot Commands
 
-All commands are prefixed with `/pm` to avoid conflicts with WeChatService commands.
+All commands are prefixed with `/pm` to avoid conflicts with larky service commands.
 
 ### Query Commands
 
@@ -136,7 +136,7 @@ Users must memorize exact syntax and parameter order. Fuzzy expressions are unsu
 ### Architecture Design
 
 ```
-User WeChat message "/ask Monitor ETH for me"
+User message "/ask Monitor ETH for me"
          │
          ▼
 ┌──────────────────────────────────────────────┐
@@ -155,7 +155,7 @@ User WeChat message "/ask Monitor ETH for me"
 │  │  6. LLM generates final response       │  │
 │  └────────────────────────────────────────┘  │
 │                                              │
-│  Return reply → wechat_client.notify()       │
+│  Return reply → unified_client.notify()      │
 └──────────────────────────────────────────────┘
 ```
 
@@ -164,7 +164,7 @@ User WeChat message "/ask Monitor ETH for me"
 - **Tool-Use Pattern**: The LLM never directly manipulates user data. It calls 9 predefined tool functions, each wrapping one or more existing Python functions, ensuring operational safety and consistency.
 - **Pre-computation First**: Numerical calculations (e.g., volatility standard deviation) are done in the Python layer. The LLM focuses solely on natural language interpretation, avoiding LLM math errors.
 - **Atomic Operations**: Adding an alert requires 3 steps (create rule → subscribe WebSocket → invalidate cache), packaged as a single tool call for atomicity.
-- **Stateless Design**: Each `/ask` call is independent with no conversation history, matching WeChat's message-driven model.
+- **Stateless Design**: Each `/ask` call is independent with no conversation history, matching the message-driven model of IM platforms.
 
 ### Available Tools
 
@@ -308,7 +308,7 @@ INFO  Interaction complete: total=1820ms llm_calls=2 tool_calls=1 tokens_in=3300
 | Default model | `deepseek-v4-flash` | DeepSeek's latest flagship model (`deepseek-chat` will be deprecated 2026/07/24); stable tool_use behavior when paired with first-iteration tool-call enforcement |
 | Keep `/pm` commands | Yes | Fallback when LLM is unavailable; precise commands are more efficient in certain scenarios |
 | `calculate_volatility` as standalone tool | Yes | LLMs aren't reliable at precise numerical computation; stats done in Python layer, LLM focuses on natural language interpretation |
-| Stateless agent | Yes | Matches WeChat's message-driven model; each `/ask` is independent, avoiding session state management complexity |
+| Stateless agent | Yes | Matches IM platform message-driven model; each `/ask` is independent, avoiding session state management complexity |
 
 ## Alert Message Examples
 
@@ -409,7 +409,7 @@ These measures ensure that `/pm price` and `/ask` always surface the freshest av
 ## Dependencies
 
 - Python >= 3.13
-- larky — WeChat bot framework
+- larky — Multi-platform bot framework (Feishu/WeChat/QQ)
 - websockets — WebSocket client
 - redis — Redis client
 - python-dotenv — Environment variable management

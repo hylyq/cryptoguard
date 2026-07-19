@@ -7,7 +7,7 @@ from .storage import AlertRule, AlertType, format_price
 from .monitor import PriceMonitor
 
 if TYPE_CHECKING:
-    from larky import WeChatClient
+    from larky import UnifiedClient
 
     from .agent import Agent
 
@@ -22,7 +22,7 @@ class CommandHandler:
         storage: "RuleStorage",
         monitor: PriceMonitor,
         okx_client: "OKXClient",
-        wechat_client: "WeChatClient",
+        wechat_client: "UnifiedClient",
         agent: "Agent | None" = None,
     ):
         self.storage = storage
@@ -31,7 +31,7 @@ class CommandHandler:
         self.wechat_client = wechat_client
         self.agent = agent
 
-    async def handle_text(self, text: str, client: "WeChatClient") -> None:
+    async def handle_text(self, text: str, client: "UnifiedClient") -> None:
         text = text.strip()
 
         # Determine prefix: /ask → LLM agent, /pm → legacy commands
@@ -71,7 +71,7 @@ class CommandHandler:
         else:
             await client.notify(f"❌ 未知命令: {cmd}\n发送 /pm help 查看帮助")
 
-    async def _handle_ask(self, text: str, client: "WeChatClient") -> None:
+    async def _handle_ask(self, text: str, client: "UnifiedClient") -> None:
         """Route /ask (and /ai) messages to the LLM agent."""
         # Extract everything after the prefix
         for prefix in ("/ask", "/ai"):
